@@ -1,0 +1,65 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Market {
+  id          String   @id
+  question    String
+  description String?
+  category    String?
+  endDate     DateTime?
+  active      Boolean  @default(true)
+  volume      Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  priceHistories MarketPriceHistory[]
+  movements      MarketMovement[]
+
+  @@map("markets")
+}
+
+model MarketPriceHistory {
+  id          Int      @id @default(autoincrement())
+  marketId    String
+  probability Float    // Current probability (0-1)
+  price       Float?   // Price in USD if available
+  volume      Float?   // Volume at this point
+  timestamp   DateTime @default(now())
+
+  // Relationships
+  market Market @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@map("market_price_histories")
+  @@index([marketId, timestamp])
+}
+
+model MarketMovement {
+  id            Int      @id @default(autoincrement())
+  marketId      String
+  startPrice    Float    // Starting probability
+  endPrice      Float    // Ending probability
+  changePercent Float    // Percentage change
+  startTime     DateTime // When the movement started
+  endTime       DateTime // When the movement was detected
+  significance  String   // "minor", "moderate", "major"
+  detected      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  // Relationships
+  market Market @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@map("market_movements")
+  @@index([marketId, createdAt])
+  @@index([significance, createdAt])
+}
