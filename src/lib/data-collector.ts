@@ -73,6 +73,9 @@ export class DataCollector {
       // Store or update market info
       await this.storeMarketInfo(marketData)
       
+      // Seed initial history on first encounter to enable immediate detection
+      await this.seedInitialHistory(marketData.id)
+
       // Get current price and store price history
       const currentPrice = parseFloat(marketData.last_trade_price || '0')
       const probability = PolymarketAPI.calculateProbability(currentPrice)
@@ -84,6 +87,38 @@ export class DataCollector {
       
     } catch (error) {
       console.error(`Error processing market ${marketData.id}:`, error)
+    }
+  }
+
+  /**
+   * If this market has no saved history yet, backfill recent price history
+   * so movement detection can work without waiting many polling cycles.
+   */
+  private async seedInitialHistory(marketId: string) {
+    const existingCount = await prisma.marketPriceHistory.count({ where: { marketId } })
+    if (existingCount > 0) return
+
+    const endTime = new Date()
+    const startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000)
+    try {
+      const history = await polymarketApi.getMarketPriceHistory(marketId, startTime, endTime)
+      if (!history || history.length === 0) return
+
+      const data = history.map(h => ({
+        marketId,
+        probability: PolymarketAPI.calculateProbability(h.price),
+        volume: undefined as number | undefined,
+        timestamp: new Date(h.timestamp)
+      }))
+
+      // Insert in chronological order; use createMany for efficiency
+      if (data.length > 0) {
+        // Sort by timestamp ascending
+        data.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+        await prisma.marketPriceHistory.createMany({ data })
+      }
+    } catch (err) {
+      console.warn(`Backfill failed for market ${marketId}:`, err)
     }
   }
 
