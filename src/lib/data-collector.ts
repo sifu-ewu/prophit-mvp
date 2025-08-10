@@ -76,9 +76,8 @@ export class DataCollector {
       // Seed initial history on first encounter to enable immediate detection
       await this.seedInitialHistory(marketData.id)
 
-      // Get current price and store price history
-      const currentPrice = parseFloat(marketData.last_trade_price || '0')
-      const probability = PolymarketAPI.calculateProbability(currentPrice)
+      // Get current probability from market data
+      const probability = PolymarketAPI.calculateProbability(marketData)
       
       await this.storePriceHistory(marketData.id, probability, parseFloat(marketData.volume_24hr || '0'))
       
@@ -98,28 +97,9 @@ export class DataCollector {
     const existingCount = await prisma.marketPriceHistory.count({ where: { marketId } })
     if (existingCount > 0) return
 
-    const endTime = new Date()
-    const startTime = new Date(endTime.getTime() - 24 * 60 * 60 * 1000)
-    try {
-      const history = await polymarketApi.getMarketPriceHistory(marketId, startTime, endTime)
-      if (!history || history.length === 0) return
-
-      const data = history.map(h => ({
-        marketId,
-        probability: PolymarketAPI.calculateProbability(h.price),
-        volume: undefined as number | undefined,
-        timestamp: new Date(h.timestamp)
-      }))
-
-      // Insert in chronological order; use createMany for efficiency
-      if (data.length > 0) {
-        // Sort by timestamp ascending
-        data.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
-        await prisma.marketPriceHistory.createMany({ data })
-      }
-    } catch (err) {
-      console.warn(`Backfill failed for market ${marketId}:`, err)
-    }
+    // For now, we'll skip historical seeding since the API might not have good historical data
+    // We'll rely on collecting data going forward
+    console.log(`Market ${marketId} is new, will start tracking from now`)
   }
 
   /**
@@ -133,7 +113,7 @@ export class DataCollector {
         description: marketData.description,
         category: marketData.category,
         endDate: marketData.end_date_iso ? new Date(marketData.end_date_iso) : null,
-        active: marketData.active && !marketData.closed && !marketData.archived,
+        active: marketData.active && !marketData.closed,
         volume: parseFloat(marketData.volume_24hr || '0'),
         updatedAt: new Date()
       },
@@ -143,7 +123,7 @@ export class DataCollector {
         description: marketData.description,
         category: marketData.category,
         endDate: marketData.end_date_iso ? new Date(marketData.end_date_iso) : null,
-        active: marketData.active && !marketData.closed && !marketData.archived,
+        active: marketData.active && !marketData.closed,
         volume: parseFloat(marketData.volume_24hr || '0')
       }
     })
